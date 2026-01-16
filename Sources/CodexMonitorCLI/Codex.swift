@@ -333,10 +333,40 @@ private enum SessionLoader {
     }
 
     static func findSessionFile(id: String) throws -> URL {
+        // Support "latest" as a special keyword
+        if id.lowercased() == "latest" {
+            if let latest = findLatestSessionFile() {
+                return latest
+            }
+            throw SessionError.sessionNotFound("latest (no sessions found)")
+        }
         if let byName = findSessionFileByName(id: id) {
             return byName
         }
         throw SessionError.sessionNotFound(id)
+    }
+
+    private static func findLatestSessionFile() -> URL? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: sessionsRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+        var latestURL: URL?
+        var latestDate: Date?
+        for case let url as URL in enumerator {
+            guard url.pathExtension == "jsonl" else { continue }
+            if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+               let modified = values.contentModificationDate {
+                if latestDate == nil || modified > latestDate! {
+                    latestDate = modified
+                    latestURL = url
+                }
+            }
+        }
+        return latestURL
     }
 
     private static func findSessionFileByName(id: String) -> URL? {
@@ -927,7 +957,7 @@ struct CodexMonitorCLI: ParsableCommand {
     struct Show: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show a session by ID.")
 
-        @Argument(help: "Session ID to display")
+        @Argument(help: "Session ID to display (or 'latest' for most recent)")
         var sessionId: String
 
         @Flag(name: .long, help: "Output session as pretty JSON")
@@ -935,6 +965,9 @@ struct CodexMonitorCLI: ParsableCommand {
 
         @Option(name: .long, help: "Message ranges like 1...3,25...28,5..., ...10")
         var ranges: String?
+
+        @Flag(name: .shortAndLong, help: "Show first 2 and last 2 messages (quick summary)")
+        var summary: Bool = false
 
         mutating func run() throws {
             let fileURL = try SessionLoader.findSessionFile(id: sessionId)
@@ -946,7 +979,16 @@ struct CodexMonitorCLI: ParsableCommand {
             }
 
             let selected: [(Int, SessionMessage)]
-            if let ranges = ranges {
+            if summary {
+                // Show first 2 and last 2 messages
+                let count = messages.count
+                if count <= 4 {
+                    selected = selectMessages(messages, ranges: [])
+                } else {
+                    let lastStart = count - 1  // -2 from end (1-indexed: count-1 and count)
+                    selected = selectMessages(messages, ranges: [1...2, lastStart...count])
+                }
+            } else if let ranges = ranges {
                 let parsed = try RangeParser.parse(ranges)
                 selected = selectMessages(messages, ranges: parsed)
             } else {
@@ -974,12 +1016,22 @@ struct CodexMonitorCLI: ParsableCommand {
                 return
             }
 
+            var lastPosition = 0
             for (index, entry) in selected.enumerated() {
                 let position = entry.0
                 let message = entry.1
-                if index > 0 { print("") }
+                if index > 0 {
+                    // Show gap indicator if messages were skipped
+                    if position > lastPosition + 1 {
+                        let skipped = position - lastPosition - 1
+                        print("")
+                        print("     ⋮ (\(skipped) messages skipped)")
+                    }
+                    print("")
+                }
                 print(messageHeader(message, index: position))
                 print(messageMarkdown(message))
+                lastPosition = position
             }
         }
     }
