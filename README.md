@@ -1,6 +1,13 @@
 # CodexMonitor
 
-Tools for **listing, inspecting, and watching local OpenAI Codex sessions** stored in `~/.codex/sessions`.
+Tools for **listing, inspecting, and watching local OpenAI Codex sessions**.
+
+By default it reads sessions from:
+- `~/.codex/sessions`
+
+Overrides:
+- `CODEX_SESSIONS_DIR` → absolute sessions directory (e.g. `/Users/alice/.codex/sessions`)
+- `CODEX_HOME` → uses `$CODEX_HOME/sessions`
 
 Works with sessions created from:
 - the **Codex CLI** (`codex exec …`, `codex exec resume …`)
@@ -80,11 +87,15 @@ The menu bar app:
 
 ### Where Codex stores sessions
 
-Codex sessions are stored as JSONL files under:
+Codex sessions are stored as JSONL files under (default):
 
 ```
 ~/.codex/sessions/YYYY/MM/DD/
 ```
+
+If you have a non-standard setup, set one of:
+- `CODEX_SESSIONS_DIR` (preferred)
+- `CODEX_HOME` (uses `$CODEX_HOME/sessions`)
 
 ### Resuming sessions by id
 

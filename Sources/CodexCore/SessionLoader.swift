@@ -2,7 +2,16 @@ import Foundation
 import Darwin
 
 public enum SessionLoader {
-    public static let sessionsRoot = URL(fileURLWithPath: "/Users/oliver/.codex/sessions")
+    public static let sessionsRoot: URL = {
+        let env = ProcessInfo.processInfo.environment
+        if let sessionsDir = env["CODEX_SESSIONS_DIR"], !sessionsDir.isEmpty {
+            return URL(fileURLWithPath: sessionsDir).standardizedFileURL
+        }
+        if let codexHome = env["CODEX_HOME"], !codexHome.isEmpty {
+            return URL(fileURLWithPath: codexHome).appending(path: "sessions")
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex/sessions")
+    }()
 
     public static func sessionFiles(under relativePath: String) throws -> [URL] {
         let targetURL = sessionsRoot.appending(path: relativePath)
