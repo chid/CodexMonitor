@@ -52,6 +52,8 @@ final class SessionMessagesViewModel: ObservableObject {
 struct SessionMessagesView: View {
     @EnvironmentObject private var sessionModel: SessionViewModel
     @StateObject private var model = SessionMessagesViewModel()
+    @State private var initialScrollTarget: Int?
+    @State private var hasPerformedInitialScroll = false
 
     var body: some View {
         let sessionURL = sessionModel.selectedSession?.url
@@ -68,42 +70,71 @@ struct SessionMessagesView: View {
                 if model.isLoading {
                     SessionLoadingPlaceholder()
                 } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 12) {
-                            if let error = model.errorMessage {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color(nsColor: .controlBackgroundColor))
-                                    .cornerRadius(8)
-                            }
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 12) {
+                                if let error = model.errorMessage {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(Color(nsColor: .controlBackgroundColor))
+                                        .cornerRadius(8)
+                                }
 
-                            ForEach(model.messages.indices, id: \.self) { index in
-                                SessionMessageRow(message: model.messages[index])
-                                    .padding(.horizontal)
+                                ForEach(model.messages.indices, id: \.self) { index in
+                                    SessionMessageRow(message: model.messages[index])
+                                        .padding(.horizontal)
+                                        .id(index)
+                                }
                             }
+                            .padding(.vertical)
                         }
-                        .padding(.vertical)
+                        .onAppear {
+                            scrollToInitialMessage(using: proxy)
+                        }
+                        .onChange(of: initialScrollTarget) { _, _ in
+                            scrollToInitialMessage(using: proxy)
+                        }
                     }
                 }
             }
         }
         .frame(minWidth: 560, minHeight: 480)
         .onAppear {
+            resetInitialScrollState()
             model.load(url: sessionURL)
         }
         .onChange(of: sessionURL) { _, newValue in
+            resetInitialScrollState()
             model.load(url: newValue)
+        }
+        .onChange(of: model.messages.count) { _, _ in
+            initialScrollTarget = model.messages.firstIndex { $0.role.caseInsensitiveCompare("user") == .orderedSame } ?? 0
         }
         .toolbar {
             Button {
+                resetInitialScrollState()
                 model.load(url: sessionURL)
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(sessionURL == nil)
+        }
+    }
+
+    private func resetInitialScrollState() {
+        initialScrollTarget = nil
+        hasPerformedInitialScroll = false
+    }
+
+    private func scrollToInitialMessage(using proxy: ScrollViewProxy) {
+        guard !hasPerformedInitialScroll, let target = initialScrollTarget else { return }
+        guard model.messages.indices.contains(target) else { return }
+        hasPerformedInitialScroll = true
+        DispatchQueue.main.async {
+            proxy.scrollTo(target, anchor: .top)
         }
     }
 }
