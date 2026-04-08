@@ -52,6 +52,7 @@ final class SessionMessagesViewModel: ObservableObject {
 struct SessionMessagesView: View {
     @EnvironmentObject private var sessionModel: SessionViewModel
     @StateObject private var model = SessionMessagesViewModel()
+    @State private var searchText = ""
 
     var body: some View {
         let sessionURL = sessionModel.selectedSession?.url
@@ -80,17 +81,18 @@ struct SessionMessagesView: View {
                                     .cornerRadius(8)
                             }
 
-                            ForEach(model.messages.indices, id: \.self) { index in
+                            ForEach(filteredMessageIndices, id: \.self) { index in
                                 SessionMessageRow(message: model.messages[index])
                                     .padding(.horizontal)
                             }
+                            .padding(.vertical)
                         }
-                        .padding(.vertical)
                     }
                 }
             }
         }
         .frame(minWidth: 560, minHeight: 480)
+        .searchable(text: $searchText, prompt: "Search messages")
         .onAppear {
             model.load(url: sessionURL)
         }
@@ -104,6 +106,20 @@ struct SessionMessagesView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(sessionURL == nil)
+        }
+    }
+
+    private var filteredMessageIndices: [Int] {
+        guard !searchText.isEmpty else {
+            return Array(model.messages.indices)
+        }
+
+        return model.messages.indices.filter { index in
+            let message = model.messages[index]
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return true }
+            return message.role.localizedCaseInsensitiveContains(query)
+                || displayedText(for: message).localizedCaseInsensitiveContains(query)
         }
     }
 }
@@ -189,30 +205,31 @@ private struct SessionMessageRow: View {
             : nil
     }
 
-    private func displayedText(for message: SessionMessage) -> String {
-        guard message.role.lowercased() == "user" else { return message.text }
-        let text = message.text
-        let startsWithContext = text.hasPrefix("# Context from my IDE setup:")
-            || text.hasPrefix("Context from my IDE setup:")
-        guard startsWithContext else { return message.text }
-        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
-        if let markerIndex = lines.firstIndex(where: { line in
+}
+
+private func displayedText(for message: SessionMessage) -> String {
+    guard message.role.lowercased() == "user" else { return message.text }
+    let text = message.text
+    let startsWithContext = text.hasPrefix("# Context from my IDE setup:")
+        || text.hasPrefix("Context from my IDE setup:")
+    guard startsWithContext else { return message.text }
+    let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+    if let markerIndex = lines.firstIndex(where: { line in
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed == "My request for Codex:" || trimmed == "## My request for Codex:"
+    }) {
+        let start = markerIndex + 1
+        let remainingLines = Array(lines.dropFirst(start))
+        if let nextContextIndex = remainingLines.firstIndex(where: { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            return trimmed == "My request for Codex:" || trimmed == "## My request for Codex:"
+            return trimmed == "Context from my IDE setup:" || trimmed == "# Context from my IDE setup:"
         }) {
-            let start = markerIndex + 1
-            let remainingLines = Array(lines.dropFirst(start))
-            if let nextContextIndex = remainingLines.firstIndex(where: { line in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                return trimmed == "Context from my IDE setup:" || trimmed == "# Context from my IDE setup:"
-            }) {
-                let slice = remainingLines.prefix(nextContextIndex)
-                return slice.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            return remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let slice = remainingLines.prefix(nextContextIndex)
+            return slice.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return message.text
+        return remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    return message.text
 }
 
 private struct SessionMessageHeader: View {
