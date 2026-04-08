@@ -8,7 +8,7 @@ final class SessionWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show(model: SessionViewModel) {
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(.accessory)
         if let window {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
